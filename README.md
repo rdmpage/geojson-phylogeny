@@ -2,7 +2,8 @@
 
 Displaying a phylogeny on a map using GeoJSON, inspired by [GenGIS](http://kiwi.cs.dal.ca/GenGIS/Main_Page).
 
-Here is an example of a set of DNA barcodes, visualised using [Leaflet](http://leafletjs.com/):
+Below is an example of a set of DNA barcodes, visualised using [Leaflet](http://leafletjs.com/). The source GeoJSON is [here](https://github.com/rdmpage/geojson-phylogeny/blob/master/examples/AMPSA361-13.COI-5P.json).
+
 ![Example](https://github.com/rdmpage/geojson-phylogeny/blob/master/examples/AMPSA361-13.COI-5P.png)
 
 Given a NEXUS-format tree file that includes geographic coordinates and information on taxonomic assignment of a set of OTUs, we can generate a GeoJSON file that includes the phylogeny, the location of the OTUs, lines connecting the OTUs to their position in the phylogeny and, if more than one OTU belongs to the same taxon, polygons enclosing the distribution of that taxon.
