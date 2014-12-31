@@ -16,3 +16,5 @@ Robert G Beiko, Donovan H Parks, Timothy Mankowski, Somayyeh Zangooei, Michael S
 
 Parks, D. H., Porter, M., Churcher, S., Wang, S., Blouin, C., Whalley, J., Brooks, S., et al. (2009, July 27). GenGIS: A geospatial information system for genomic data. Genome Research. Cold Spring Harbor Laboratory Press. [doi:10.1101/gr.095612.109](http://dx.doi.org/10.1101/gr.095612.109)
 
+Parks, D. H., & Beiko, R. G. (2009). Quantitative visualizations of hierarchically organized data in a geographic context. 2009 17th International Conference on Geoinformatics. [doi:10.1109/geoinformatics.2009.5293552](http://dx.doi.org/10.1109/geoinformatics.2009.5293552)
+
