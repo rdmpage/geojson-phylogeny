@@ -361,7 +361,14 @@ class RectangleTreeDrawer extends TreeDrawer
 			
 			$style = '{"weight":2,"color":"' . $p->GetColour()[0] . '", "opacity":1}';
 			
+			//$this->port->DrawLine($p0, $p1, $style);
+			
+			$p0 = $p->GetAttribute('xy');
+			$p1 = $p->GetAttribute('backarc');
+			
+			$style = '{"weight":2,"color":"' . $p->GetColour()[0] . '", "opacity":1}';
 			$this->port->DrawLine($p0, $p1, $style);
+			
  		}
  		
  		if ($this->draw_leaf_labels)
@@ -383,12 +390,26 @@ class RectangleTreeDrawer extends TreeDrawer
 				
 			$style = '{"weight":2,"color":"' . $p->GetColour()[0] . '", "opacity":1}';
 			
-			$this->port->DrawLine($p0, $p1, $style);
+			//$this->port->DrawLine($p0, $p1, $style);
 			
+			$p0 = $p->GetAttribute('xy');
+			$p1 = $p->GetAttribute('backarc');
+			
+		$colour = 'white';
+		$colour = 'rgb(128,128,128)';
+		if (count($p->GetColour()) == 1)
+		{
+			$colour = $p->GetColour()[0];
+		}
+			
+			
+			$style = '{"weight":2,"color":"' . $colour . '", "opacity":1}';
+			$this->port->DrawLine($p0, $p1, $style);
 			
 		}
 		
 		// rectangle
+		/*
 		$pl = $p->GetChild()->GetAttribute('xy');
 		$pr = $p->GetChild()->GetRightMostSibling()->GetAttribute('xy');
 		
@@ -396,8 +417,13 @@ class RectangleTreeDrawer extends TreeDrawer
 		$p0['y'] = $pl['y'];
 		$p1['x'] = $p0['x'];
 		$p1['y'] = $pr['y'];
+		*/
+
+		$pl = $p->GetChild()->GetAttribute('backarc');
+		$pr = $p->GetChild()->GetRightMostSibling()->GetAttribute('backarc');
 		
 		$colour = 'white';
+		$colour = 'rgb(128,128,128)';
 		if (count($p->GetColour()) == 1)
 		{
 			$colour = $p->GetColour()[0];
@@ -406,7 +432,8 @@ class RectangleTreeDrawer extends TreeDrawer
 		
 		$style = '{"weight":2,"color":"' . $colour . '", "opacity":1}';
 			
-		$this->port->DrawLine($p0, $p1, $style);
+		//$this->port->DrawLine($p0, $p1, $style);
+		$this->port->DrawLine($pl, $pr, $style);
 		
  		$this->DrawInternalLabel ($p);		
 	}
@@ -434,6 +461,19 @@ class PhylogramTreeDrawer extends RectangleTreeDrawer
 		$pt['y'] = $pl['y'] + ($pr['y'] - $pl['y'])/2.0;
    	
 		$p->SetAttribute('xy', $pt);
+		
+		// back arcs
+		$child = $p->GetChild();
+		while ($child)
+		{
+			$child_pt = $child->GetAttribute('xy');
+			$child_pt['x'] = $pt['x'];
+			
+			$child->SetAttribute('backarc', $child_pt);
+			$child =  $child->GetSibling();
+		}
+		
+		
 	}
 	
 	//----------------------------------------------------------------------------------------------

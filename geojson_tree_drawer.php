@@ -193,6 +193,8 @@ class GeoLayout
 	var $occurrence_list = array();
 	var $occurrence_label_to_order = array();
 	
+	var $mapping_pts = array();
+	
 	var $edges = array();
 	
 	var $bins = array();
@@ -202,6 +204,16 @@ class GeoLayout
 	var $occurrence_colours = array();
 	
 	var $port = null;
+	
+	var $left_centroid = array();
+	var $bottom_centroid = array();
+	
+	var $tree_canvas_size = 100;
+	var $matching_canvas_size = 0;
+	var $td = null;
+	
+	var $orientation = 0;
+	
 
 	//----------------------------------------------------------------------------------------------
 	function __construct($t)
@@ -216,6 +228,8 @@ class GeoLayout
 	}
 
 	//----------------------------------------------------------------------------------------------
+	// Add an occurrence. We store the latitude and longitude, assign the occurrence to
+	// a taxonomic "bin", and update the bounding box for the occurrences.
 	function add_occurrence($label, $latlong)
 	{
 		$this->occurrences[$label] = $latlong;
@@ -225,30 +239,40 @@ class GeoLayout
 		
 		$this->bounds->extend($latlong);
 		
-		// Initially each occurrence is in its own "bin"
-		$this->bins[$label] = $label;
 	}
 	
 	//----------------------------------------------------------------------------------------------
+	// Add a bin to the list of bins (taxa)
 	function add_bin($label, $bin_label)
 	{
 		$this->bins[$label] = $bin_label;
 	}
 	
 	//----------------------------------------------------------------------------------------------
-	function sort_occurrences()
+	function sort_occurrences($by_latitude = true)
 	{
-		array_multisort($this->latitude, SORT_DESC, SORT_NUMERIC, $this->occurrences); 
+		if ($by_latitude)
+		{
+			// sort by latitude
+			array_multisort($this->latitude, SORT_DESC, SORT_NUMERIC, $this->occurrences);
+		}
+		else
+		{
+			// sort by longitude
+			array_multisort($this->longitude, SORT_ASC, SORT_NUMERIC, $this->occurrences);
+		}
 		
-		// Clean up
+		// Clean up datastructures that we no longer need
 		unset($this->latitude);
 		unset($this->longitude);	
 	}
 	
+	
 	//----------------------------------------------------------------------------------------------
+	// Make the bipartite matching graph between occurrences and taxa
 	function make_bipartite_graph()
 	{
-		$this->sort_occurrences();
+		$this->sort_occurrences(($this->orientation == 1));
 		
 		// on other side vertices are the occurrences 
 		$i = 0;
@@ -274,43 +298,114 @@ class GeoLayout
 	}
 	
 	//----------------------------------------------------------------------------------------------
-	// Bounding box for where we will draw the tree
+	// Bounding box for where we will draw the tree and the bipartite graph
 	function get_tree_rect()
 	{
 		$rect = new stdclass;
-		
+				
 		$g = new GoogleMapsAPIProjection(0);
+				
+		if ($this->orientation == 1)
+		{
+			$top_left_longlat = array($this->bounds->min_xy[0], $this->bounds->max_xy[1]);
+			$bottom_left_longlat = array($this->bounds->min_xy[0], $this->bounds->min_xy[1]);
+
+			$top_left_pixel = $g->FromCoordinatesToPixel($top_left_longlat);
+			$bottom_left_pixel = $g->FromCoordinatesToPixel($bottom_left_longlat);
+			
+			$height = $bottom_left_pixel[1] - $top_left_pixel[1];
+			$width = $height;
+			
+			$rect->x = $top_left_pixel[0] - $width;// - ($width * 0.2);
+			$rect->y = $top_left_pixel[1];
+			$rect->width = $width;
+			$rect->height = $height;
+			
+		}
+		else
+		{
+			// bottom points
+			$bottom_left_longlat = array($this->bounds->min_xy[0], $this->bounds->min_xy[1]);
+			$bottom_right_longlat = array($this->bounds->max_xy[0], $this->bounds->min_xy[1]);
+			
+			$bottom_left_pixel = $g->FromCoordinatesToPixel($bottom_left_longlat);
+			$bottom_right_pixel = $g->FromCoordinatesToPixel($bottom_right_longlat);
+			
+			$width = $bottom_right_pixel[0] - $bottom_left_pixel[0];
+			$height = $width;
+			
+			$rect->x = $bottom_left_pixel[0];
+			$rect->y = $bottom_left_pixel[1];// + ($width * 0.2);
+			$rect->width = $width;
+			$rect->height = $height;
 		
-		$top_longlat = array($this->bounds->min_xy[0], $this->bounds->max_xy[1]);
-		$bottom_longlat = array($this->bounds->min_xy[0], $this->bounds->min_xy[1]);
+		}
 		
-		$pixel_top = $g->FromCoordinatesToPixel($top_longlat);
-		$pixel_bottom = $g->FromCoordinatesToPixel($bottom_longlat);
-		
-		$span = $pixel_bottom[1] - $pixel_top[1];
-		
-		$rect->height = $span; 			// vertical span of occurrences
-		$rect->width = $rect->height;	// make tree fit in square box
-		
-		// origin of tree (top left in pixel coordinates)
-		$rect->x = $pixel_top[0] - $span;
-		$rect->y = $pixel_top[1];
-		
-		return $rect;	
+		return $rect;
+
 	}
 	
 	//----------------------------------------------------------------------------------------------
-	function draw_tree()
+	function offset_point($pt, $offset)
 	{
-		$rect = $this->get_tree_rect();
+		$pt['x'] += $offset['x'];
+		$pt['y'] += $offset['y'];
 		
+		return $pt;
+	}
+	
+	//----------------------------------------------------------------------------------------------
+	function scale_point($pt, $origin, $scale_x = 1.0, $scale_y = 1.0)
+	{
+		// Translate w.r.t. origin
+		$pt['x'] -= $origin['x'];
+		$pt['y'] -= $origin['y'];
+
+		// scale
+		$pt['x'] *= $scale_x;
+		$pt['y'] *= $scale_y;
+
+		// Translate back 
+		$pt['x'] += $origin['x'];
+		$pt['y'] += $origin['y'];
+		
+		return $pt;
+	}	
+		
+	//----------------------------------------------------------------------------------------------
+	function rotate_point($pt, $origin, $angle_in_degrees)
+	{
+		// Translate w.r.t. origin
+		$pt['x'] -= $origin['x'];
+		$pt['y'] -= $origin['y'];
+		
+		// Rotate
+		$x = $pt['x'];
+		$y = $pt['y'];
+		
+		$angle = deg2rad($angle_in_degrees);
+		$pt['x'] = $x * cos($angle) - $y * sin($angle);
+		$pt['y'] = $y * cos($angle) + $x * sin($angle);
+		
+		// Translate back 
+		$pt['x'] += $origin['x'];
+		$pt['y'] += $origin['y'];
+		
+		return $pt;
+	}
+	
+	//----------------------------------------------------------------------------------------------
+	function compute_tree_layout()
+	{
 		$this->tree->BuildWeights($this->tree->GetRoot());
+		
+		$this->matching_canvas_size = $this->tree_canvas_size * 0.25;
 		
 		// Drawing properties
 		$attr = array();
 		$attr['inset']			= 0;
-		$attr['width'] 			= $rect->width/2.0;
-		$attr['height'] 		= $rect->height;
+		$attr['width'] 			= $this->tree_canvas_size - $this->matching_canvas_size; 
+		$attr['height'] 		= $this->tree_canvas_size;
 		
 		$attr['font_height'] 	= 10;
 		$attr['line_width'] 	= 1;
@@ -321,34 +416,19 @@ class GeoLayout
 		
 		$attr['draw_scale_bar'] = false;
 	
-		$td = NULL;
+		$this->td = NULL;
 	
 		if ($this->tree->HasBranchLengths())
 		{
-			$td = new PhylogramTreeDrawer($this->tree, $attr);
+			$this->td = new PhylogramTreeDrawer($this->tree, $attr);
 		}
 		else
 		{
-			$td = new RectangleTreeDrawer($this->tree, $attr);
+			$this->td = new RectangleTreeDrawer($this->tree, $attr);
 		}
 		
-		$td->CalcCoordinates();	
+		$this->td->CalcCoordinates();	
 	
-		// offset everything (doesn't do scale bar yet)
-		$n = new NodeIterator ($this->tree->getRoot());
-		
-		$q = $n->Begin();
-		while ($q != NULL)
-		{					
-			$pt = $q->GetAttribute('xy');
-			$pt['x'] += $rect->x;
-			$pt['y'] += $rect->y;
-			$q->SetAttribute('xy', $pt);
-			
-			$q = $n->Next();
-		}
-		
-		
 		// colour tree
 		{
 			$n = new NodeIterator ($this->tree->getRoot());
@@ -371,13 +451,106 @@ class GeoLayout
 				$q = $n->Next();
 			}
 		}
-		
-		
-		
-		$td->Draw($this->port);
 	}
 	
 	//----------------------------------------------------------------------------------------------
+	function place_tree($angle = -90, $scale = 0.2, $centre = array(128,128))
+	{
+		$n = new NodeIterator ($this->tree->getRoot());
+
+		// centre of tree canvas 
+		$cx = $this->tree_canvas_size/2.0;
+		$cy = $this->tree_canvas_size/2.0;
+		
+		$origin = array('x' => $cx, 'y' => $cy);
+		
+		$scale_x = $scale;
+		$scale_y = $scale;
+		
+		if ($this->orientation == 1)
+		{
+			//$scale_y *= 0.5;
+		}
+		else
+		{
+			//$scale_x *= 0.5;
+		};
+		
+		// rotate points in tree
+		$q = $n->Begin();
+		while ($q != NULL)
+		{					
+			$pt = $q->GetAttribute('xy');
+			$pt = $this->rotate_point($pt, $origin, $angle);
+			$q->SetAttribute('xy', $pt);
+
+			$back = $q->GetAttribute('backarc');
+			if ($back)
+			{
+				$pt = $q->GetAttribute('backarc');
+				$pt = $this->rotate_point($pt, $origin, $angle);
+				$q->SetAttribute('backarc', $pt);
+			}			
+			
+			$q = $n->Next();
+		}
+
+		// scale points in tree
+		$q = $n->Begin();
+		while ($q != NULL)
+		{					
+			$pt = $q->GetAttribute('xy');
+			$pt = $this->scale_point($pt, $origin, $scale_x, $scale_y);
+			$q->SetAttribute('xy', $pt);
+
+			$back = $q->GetAttribute('backarc');
+			if ($back)
+			{
+				$pt = $q->GetAttribute('backarc');
+				$pt = $this->scale_point($pt, $origin, $scale_x, $scale_y);
+				$q->SetAttribute('backarc', $pt);
+			}			
+			
+			$q = $n->Next();
+		}
+		
+		// move to new centre
+		$offset = array(
+			'x' => $centre[0] - $origin['x'],
+			'y' => $centre[1] - $origin['y']
+			);
+		$q = $n->Begin();
+		while ($q != NULL)
+		{					
+			$pt = $q->GetAttribute('xy');
+			$pt = $this->offset_point($pt, $offset);
+			$q->SetAttribute('xy', $pt);
+
+			$back = $q->GetAttribute('backarc');
+			if ($back)
+			{
+				$pt = $q->GetAttribute('backarc');
+				$pt = $this->offset_point($pt, $offset);
+				$q->SetAttribute('backarc', $pt);
+			}			
+			
+			$q = $n->Next();
+		}
+		
+
+	}
+	
+		
+
+	//----------------------------------------------------------------------------------------------
+	function draw_tree()
+	{
+		$this->td->Draw($this->port);	
+	}
+	
+	//----------------------------------------------------------------------------------------------
+	// Order tree to minimise the number of crossings in the matching between leaves
+	// and occurrences.
 	function reorder_tree()
 	{
 		$ni = new NodeIterator ($this->tree->GetRoot());
@@ -483,6 +656,7 @@ class GeoLayout
 	}
 	
 	//----------------------------------------------------------------------------------------------
+	// Create taxa by placing occurrences in the corresponding bins
 	function get_taxa()
 	{
 		$this->taxa = array();
@@ -498,6 +672,7 @@ class GeoLayout
 	}
 
 	//----------------------------------------------------------------------------------------------
+	// Arbitrarily colour the taxa to help distinguish them
 	function colour_taxa()
 	{
 		$this->taxon_colours = array();
@@ -528,10 +703,12 @@ class GeoLayout
 	
 	
 	//----------------------------------------------------------------------------------------------
+	// Taxa that have more than one member (e.g., barcode BINs) have a polygon drawn around
+	// all the occurrences
 	function draw_taxa()
 	{
 		// do we have any bins with > 1 member?
-		// if so, draw polygon
+		// if so, draw polygon around members
 				
 		foreach ($this->taxa as $taxon_name => $taxon)
 		{
@@ -581,56 +758,117 @@ class GeoLayout
 		}
 	}
 	
+	//----------------------------------------------------------------------------------------------
+	function place_mapping($angle = -90, $scale = 0.2, $centre = array(128,128))
+	{
+		$cx = $this->tree_canvas_size/2.0;
+		$cy = $this->tree_canvas_size/2.0;
+	
+		$origin = array('x' => $cx, 'y' => $cy);
+		
+		$scale_x = $scale;
+		$scale_y = $scale;		
+		
+		if ($this->orientation == 1)
+		{
+			//$scale_y *= 0.5;
+		}
+		else
+		{
+			//$scale_x *= 0.5;
+		};
+	
+		// rotate
+		foreach ($this->mapping_pts as $occurence_label => $pts)
+		{
+			$pt = $pts[0];
+			$pt = $this->rotate_point($pt, $origin, $angle);
+			$this->mapping_pts[$occurence_label][0] = $pt;
+
+			$pt = $pts[1];
+			$pt = $this->rotate_point($pt, $origin, $angle);
+			$this->mapping_pts[$occurence_label][1] = $pt;
+		}
+		
+		// scale
+		foreach ($this->mapping_pts as $occurence_label => $pts)
+		{
+			$pt = $pts[0];
+			$pt = $this->scale_point($pt, $origin, $scale_x, $scale_y);
+			$this->mapping_pts[$occurence_label][0] = $pt;
+
+			$pt = $pts[1];
+			$pt = $this->scale_point($pt, $origin, $scale_x, $scale_y);
+			$this->mapping_pts[$occurence_label][1] = $pt;
+		}
+
+		// move
+		$offset = array(
+			'x' => $centre[0] - $origin['x'],
+			'y' => $centre[1] - $origin['y']
+			);
+		foreach ($this->mapping_pts as $occurence_label => $pts)
+		{
+			$pt = $pts[0];
+			$pt = $this->offset_point($pt, $offset);
+			$this->mapping_pts[$occurence_label][0] = $pt;
+
+			$pt = $pts[1];
+			$pt = $this->offset_point($pt, $offset);
+			$this->mapping_pts[$occurence_label][1] = $pt;
+		}
+	
+	}
+	
 	
 	//----------------------------------------------------------------------------------------------
-	function get_geojson()
+	function compute_mapping_layout()
 	{
-		$this->get_taxa();
-		$this->colour_taxa();
+		$span = $this->tree_canvas_size;
 	
-		// tree
-		$this->draw_tree();
-		
-		$g = new GoogleMapsAPIProjection(0);
-		
-		$top_longlat = array($this->bounds->min_xy[0], $this->bounds->max_xy[1]);
-		$bottom_longlat = array($this->bounds->min_xy[0], $this->bounds->min_xy[1]);
-		
-		$pixel_top = $g->FromCoordinatesToPixel($top_longlat);
-		$pixel_bottom = $g->FromCoordinatesToPixel($bottom_longlat);
-		
-		$span = $pixel_bottom[1] - $pixel_top[1];
-		
 		$n = $this->tree->GetNumLeaves();
 		$n2 = count($this->edges);
-		
+	
 		$leaf_gap = $span / ($n - 1); // vertical gap between leaves in tree
 		$occurrence_gap = $span / ($n2 - 1); // vertical gap between occurrences 
-		
+	
+		$this->mapping_pts = array();
+	
 		// Bipartite graph
+		// Compute positions
 		foreach ($this->edges as $edge)
 		{
 			// Mapping between leaves and occurrences
 			$left_pixel = array(
-				'x' => $pixel_top[0]  - (($n-1)/2) * $leaf_gap,
-				'y' => $pixel_top[1] + ($edge[0] * $leaf_gap)
+				'x' => ($this->tree_canvas_size - $this->matching_canvas_size),
+				'y' => $edge[0] * $leaf_gap
 				);
-									
+								
 			$right_pixel = array(
-//				'x' => $pixel_top[0],
-				'x' => $left_pixel['x'] + 4 * $leaf_gap,
-				'y' => $pixel_top[1] + ($edge[1] * $occurrence_gap)
+				'x' => $this->tree_canvas_size,
+				'y' => $edge[1] * $occurrence_gap
 				);
-				
-				
-			$occurence_label = $this->occurrence_list[$edge[1]];
-				
-			$style = '{"weight":2,"color":"' . $this->occurrence_colours[$occurence_label] . '","opacity":1}';
 			
-			$this->port->DrawLine($left_pixel, $right_pixel, $style);
+			$occurence_label = $this->occurrence_list[$edge[1]];				
+			
+			$this->mapping_pts[$occurence_label] = array($left_pixel, $right_pixel);
+		}
+		
+	}
+	
+	//----------------------------------------------------------------------------------------------
+	function draw_mapping()
+	{
+		$g = new GoogleMapsAPIProjection(0);
+		
+		foreach ($this->mapping_pts as $occurence_label => $pts)
+		{
+			$style = '{"weight":2,"color":"' . $this->occurrence_colours[$occurence_label] . '","opacity":0.5}';
+			
+			//$this->port->DrawLine($left_pixel, $right_pixel, $style);
+			$this->port->DrawLine($pts[0], $pts[1], $style);
 			
 			// Line from edge to occurrence on map
-			
 			$occurrence_longlat = array(
 				$this->occurrences[$occurence_label][1],
 				$this->occurrences[$occurence_label][0] 
@@ -641,7 +879,8 @@ class GeoLayout
 				'y' => $occurrence_coordinates[1]
 				);
 			
-			$this->port->DrawLine($right_pixel, $occurrence_pixel, $style);
+			//$this->port->DrawLine($right_pixel, $occurrence_pixel, $style);
+			$this->port->DrawLine($pts[1], $occurrence_pixel, $style);
 			
 			// occurrence itself
 			if (1)
@@ -649,6 +888,54 @@ class GeoLayout
 				$this->port->DrawText($occurrence_pixel, $occurence_label);
 			}
 		}
+	}	
+	
+	
+	//----------------------------------------------------------------------------------------------
+	// Create GeoJSON object that combines tree, mapping, and occurrences.
+	function get_geojson()
+	{
+		$this->get_taxa();
+		$this->colour_taxa();
+		
+		if ($this->orientation == 1)
+		{
+			// vertical
+			$rect = $this->get_tree_rect();
+			$angle = 0;
+		}
+		else
+		{
+			// horizontal
+			$rect = $this->get_tree_rect();		
+			$angle = -90;	
+		}
+	
+		// tree
+		$this->compute_tree_layout();
+		
+		$scale = $rect->width/$this->tree_canvas_size;
+		
+		$centre = array(128,128);
+		
+		$centre = array($rect->x + $rect->width/2,$rect->y + $rect->height/2);
+		
+		
+		$this->place_tree($angle, $scale, $centre);
+
+		
+		
+		
+		$this->draw_tree();
+		
+		// mapping between tree and occurrences
+		$this->compute_mapping_layout();	
+		
+		// move
+		$this->place_mapping($angle, $scale, $centre);
+		
+		// draw
+		$this->draw_mapping();
 		
 		// Polygons for taxa
 		$this->draw_taxa();
@@ -661,20 +948,30 @@ class GeoLayout
 }
 
 //--------------------------------------------------------------------------------------------------
-function create_geojson($filename)
+function create_geojson_from_file($filename)
 {
 	$nexus = file_get_contents($filename);
+
+	$json = create_geojson_from_nexus($nexus);
 	
+	return $json;
+}
 	
+
+//--------------------------------------------------------------------------------------------------
+function create_geojson_from_nexus($nexus)
+{
 	$data = read_nexus($nexus);
 	
-	// get tree
-	
+	// get tree	
 	$taxa = get_taxa_from_tree($data->treeblock);
 	$newick = $data->treeblock->trees[0]->newick;
 	
 	$t = new Tree();
 	$t->Parse($newick);
+	
+	// create layout object
+	$g = new GeoLayout($t);	
 	
 	$ni = new NodeIterator ($t->getRoot());
 			
@@ -687,15 +984,14 @@ function create_geojson($filename)
 			{
 				$q->SetLabel($data->treeblock->translations->translate[$q->GetLabel()]);
 			}
+			// by default each OTU is in its own bin
+			$g->add_bin($q->GetLabel(),$q->GetLabel());
 		}
 		$q = $ni->Next();
 	}
 	
-	$g = new GeoLayout($t);
-	
-	
 	// get coordinates	
-	foreach ($data->characters->matrix as $taxa => $pair)
+	foreach ($data->characters->matrix as $otu => $pair)
 	{
 		$latlong = array();
 		
@@ -708,11 +1004,11 @@ function create_geojson($filename)
 			$latlong[] = $pair['longitude'];
 		}
 			
-		$g->add_occurrence($taxa, $latlong);
+		$g->add_occurrence($otu, $latlong);
 		
 	}
 	
-	// taxa
+	// taxa (if defined)
 	if (isset($data->notes))
 	{
 		$n = count($data->notes->alttaxnames[0]->names);
@@ -723,8 +1019,8 @@ function create_geojson($filename)
 		}
 	}
 	
+	$g->orientation = 0;
 	$g->make_bipartite_graph();
-	
 	
 	$json = $g->get_geojson();
 	
