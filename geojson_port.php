@@ -186,6 +186,7 @@ class GeoJsonPort extends Port
 	{
 		//print_r($this->bounds);exit();
 		$this->geojson->bbox = $this->bounds->toArray();
+		//$this->output = json_encode($this->geojson, JSON_PRETTY_PRINT);
 		$this->output = json_encode($this->geojson, JSON_PRETTY_PRINT);
 	}
 		
