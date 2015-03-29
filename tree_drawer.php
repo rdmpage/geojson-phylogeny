@@ -248,8 +248,9 @@ class TreeDrawer
 		$p1 = $p0;
 		$p1['x'] -= $this->node_gap;
 		//$this->DrawLine($p0, $p1);
-		
-		$style = '{"weight":2,"color":"' . $this->t->GetRoot()->GetColour()[0] . '", "opacity":1}';
+
+		$style = '{"weight":2, "color":"black", "opacity":1}';
+//		$style = '{"weight":2,"color":"' . $this->t->GetRoot()->GetColour()[0] . '", "opacity":1}';
 		
 		
 		$this->port->DrawLine($p0, $p1, $style);
@@ -359,14 +360,19 @@ class RectangleTreeDrawer extends TreeDrawer
 			$p1 = $anc->GetAttribute('xy');
 			$p1['y'] = $p0['y'];
 			
-			$style = '{"weight":2,"color":"' . $p->GetColour()[0] . '", "opacity":1}';
+			$carray = $p->GetColour();
+			$c = $carray[0];
+			
+			$style = '{"weight":2,"color":"' . $c . '", "opacity":1}';
+			//$style = '{"weight":2,"color":"' . $p->GetColour()[0] . '", "opacity":1}';
 			
 			//$this->port->DrawLine($p0, $p1, $style);
 			
 			$p0 = $p->GetAttribute('xy');
 			$p1 = $p->GetAttribute('backarc');
 			
-			$style = '{"weight":2,"color":"' . $p->GetColour()[0] . '", "opacity":1}';
+			$style = '{"weight":2,"color":"' . $c . '", "opacity":1}';
+			//$style = '{"weight":2,"color":"' . $p->GetColour()[0] . '", "opacity":1}';
 			$this->port->DrawLine($p0, $p1, $style);
 			
  		}
@@ -387,21 +393,24 @@ class RectangleTreeDrawer extends TreeDrawer
 		{
 			$p1 = $anc->GetAttribute('xy');
 			$p1['y'] = $p0['y'];
-				
-			$style = '{"weight":2,"color":"' . $p->GetColour()[0] . '", "opacity":1}';
+			
+			$carray = $p->GetColour();
+			$c = $carray[0];
+			
+			$style = '{"weight":2,"color":"' . $c . '", "opacity":1}';				
+			//$style = '{"weight":2,"color":"' . $p->GetColour()[0] . '", "opacity":1}';
 			
 			//$this->port->DrawLine($p0, $p1, $style);
 			
 			$p0 = $p->GetAttribute('xy');
 			$p1 = $p->GetAttribute('backarc');
 			
-		$colour = 'white';
-		$colour = 'rgb(128,128,128)';
-		if (count($p->GetColour()) == 1)
-		{
-			$colour = $p->GetColour()[0];
-		}
-			
+			$colour = 'white';
+			$colour = 'rgb(128,128,128)';
+			if (count($carray) == 1)
+			{
+				$colour = $c;
+			}			
 			
 			$style = '{"weight":2,"color":"' . $colour . '", "opacity":1}';
 			$this->port->DrawLine($p0, $p1, $style);
@@ -422,11 +431,14 @@ class RectangleTreeDrawer extends TreeDrawer
 		$pl = $p->GetChild()->GetAttribute('backarc');
 		$pr = $p->GetChild()->GetRightMostSibling()->GetAttribute('backarc');
 		
+		$carray = $p->GetColour();
+		$c = $carray[0];
+				
 		$colour = 'white';
 		$colour = 'rgb(128,128,128)';
-		if (count($p->GetColour()) == 1)
+		if (count($carray) == 1)
 		{
-			$colour = $p->GetColour()[0];
+			$colour = $c;
 		}
 		//echo join(",", $p->GetColour()) . "\n";
 		
